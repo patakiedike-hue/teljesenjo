@@ -6,13 +6,14 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader } from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { Users, FileText, Calendar, DollarSign, Check, X, Trash2, Shield, Mail, MailCheck } from 'lucide-react';
+import { Users, FileText, Calendar, DollarSign, Check, X, Trash2, Shield, Mail, MailCheck, Image } from 'lucide-react';
 
 export const AdminPanel = () => {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [events, setEvents] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [pendingPosts, setPendingPosts] = useState([]);
 
   useEffect(() => {
     if (user?.role !== 1) {
@@ -24,16 +25,39 @@ export const AdminPanel = () => {
 
   const fetchAllData = async () => {
     try {
-      const [usersRes, eventsRes, paymentsRes] = await Promise.all([
+      const [usersRes, eventsRes, paymentsRes, postsRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/events'),
-        api.get('/admin/payments')
+        api.get('/admin/payments'),
+        api.get('/posts/pending')
       ]);
       setUsers(usersRes.data);
       setEvents(eventsRes.data);
       setPayments(paymentsRes.data);
+      setPendingPosts(postsRes.data);
     } catch (error) {
       console.error('Failed to fetch admin data:', error);
+    }
+  };
+
+  const handleApprovePost = async (postId) => {
+    try {
+      await api.post(`/posts/${postId}/approve`);
+      toast.success('Poszt jóváhagyva');
+      fetchAllData();
+    } catch (error) {
+      toast.error('Hiba történt');
+    }
+  };
+
+  const handleRejectPost = async (postId) => {
+    if (!window.confirm('Biztosan elutasítod és törlöd ezt a posztot?')) return;
+    try {
+      await api.post(`/posts/${postId}/reject`);
+      toast.success('Poszt elutasítva');
+      fetchAllData();
+    } catch (error) {
+      toast.error('Hiba történt');
     }
   };
 
@@ -156,10 +180,14 @@ export const AdminPanel = () => {
         </div>
 
         <Tabs defaultValue="users" className="w-full">
-          <TabsList className="bg-zinc-900 border border-white/10 p-1">
+          <TabsList className="bg-zinc-900 border border-white/10 p-1 flex-wrap">
             <TabsTrigger value="users" className="data-[state=active]:bg-primary data-[state=active]:text-white" data-testid="tab-users">
               <Users className="w-4 h-4 mr-2" />
               Felhasználók
+            </TabsTrigger>
+            <TabsTrigger value="posts" className="data-[state=active]:bg-primary data-[state=active]:text-white" data-testid="tab-posts">
+              <Image className="w-4 h-4 mr-2" />
+              Posztok ({pendingPosts.length})
             </TabsTrigger>
             <TabsTrigger value="events" className="data-[state=active]:bg-primary data-[state=active]:text-white" data-testid="tab-events">
               <Calendar className="w-4 h-4 mr-2" />
@@ -170,6 +198,68 @@ export const AdminPanel = () => {
               Fizetések
             </TabsTrigger>
           </TabsList>
+          
+          {/* Posztok moderáció */}
+          <TabsContent value="posts" className="space-y-4 mt-6">
+            <Card className="bg-zinc-900/50 border-white/5">
+              <CardHeader>
+                <h2 className="font-chakra text-xl font-bold uppercase text-white">
+                  Posztok jóváhagyása
+                </h2>
+              </CardHeader>
+              <CardContent>
+                {pendingPosts.length === 0 ? (
+                  <p className="text-zinc-400">Nincs jóváhagyásra váró poszt</p>
+                ) : (
+                  <div className="space-y-4">
+                    {pendingPosts.map((post) => (
+                      <div key={post.post_id} className="p-4 bg-zinc-800/30 rounded-lg">
+                        <div className="flex items-start gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-white">{post.username}</p>
+                            <p className="text-sm text-zinc-400 mt-1 break-words">{post.content}</p>
+                            
+                            {post.image_base64 && (
+                              <img
+                                src={post.image_base64}
+                                alt="Post"
+                                className="mt-3 max-h-48 rounded-lg object-cover"
+                              />
+                            )}
+                            
+                            {post.video_base64 && (
+                              <video
+                                src={post.video_base64}
+                                controls
+                                className="mt-3 max-h-48 rounded-lg"
+                              />
+                            )}
+                          </div>
+                          
+                          <div className="flex gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              onClick={() => handleApprovePost(post.post_id)}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              <Check className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleRejectPost(post.post_id)}
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="users" className="space-y-4 mt-6">
             <Card className="bg-zinc-900/50 border-white/5">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Header } from "../components/Header";
 import { FriendsSidebar } from "../components/FriendsSidebar";
 import { useAuth } from "../context/AuthContext";
@@ -10,19 +10,25 @@ import { Card, CardContent, CardHeader } from "../components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 
 import { toast } from "sonner";
+import EmojiPicker from "emoji-picker-react";
+import ReactCrop from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 
 import {
   ThumbsUp,
   MessageCircle,
   Send,
   Image as ImageIcon,
+  Video,
   Trash2,
   Zap,
   Calendar,
   MapPin,
   Flame,
   BadgeCheck,
-  X
+  X,
+  Smile,
+  Crop
 } from "lucide-react";
 
 import { formatDistanceToNow, format } from "date-fns";
@@ -38,6 +44,15 @@ export const Feed = () => {
 
   const [content, setContent] = useState("");
   const [imageBase64, setImageBase64] = useState("");
+  const [videoBase64, setVideoBase64] = useState("");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  
+  // Image cropping
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropSrc, setCropSrc] = useState(null);
+  const [crop, setCrop] = useState({ unit: '%', width: 80, aspect: 16/9 });
+  const [completedCrop, setCompletedCrop] = useState(null);
+  const imgRef = useRef(null);
 
   const [expandedPost, setExpandedPost] = useState(null);
   const [comments, setComments] = useState({});
@@ -106,23 +121,25 @@ export const Feed = () => {
   const handleCreatePost = async (e) => {
     e.preventDefault();
 
-    if (!content.trim()) {
-      toast.error("Írj valamit!");
+    if (!content.trim() && !imageBase64 && !videoBase64) {
+      toast.error("Írj valamit vagy tölts fel képet/videót!");
       return;
     }
 
     try {
       await api.post("/posts", {
         content,
-        image_base64: imageBase64
+        image_base64: imageBase64,
+        video_base64: videoBase64
       });
 
       setContent("");
       setImageBase64("");
+      setVideoBase64("");
 
       await fetchPosts();
 
-      toast.success("Bejegyzés létrehozva");
+      toast.success("Bejegyzés létrehozva! Admin jóváhagyásra vár.");
     } catch (error) {
       console.error(error);
       toast.error("Hiba történt");
@@ -133,14 +150,70 @@ export const Feed = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("A kép maximum 10MB lehet");
+      return;
+    }
+
     const reader = new FileReader();
-
     reader.onloadend = () => {
-      setImageBase64(reader.result);
+      setCropSrc(reader.result);
+      setShowCropModal(true);
     };
-
     reader.readAsDataURL(file);
   };
+  
+  const handleVideoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("A videó maximum 50MB lehet");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setVideoBase64(reader.result);
+      setImageBase64("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const onEmojiClick = (emojiObject) => {
+    setContent((prev) => prev + emojiObject.emoji);
+    setShowEmojiPicker(false);
+  };
+
+  const getCroppedImg = useCallback(() => {
+    if (!imgRef.current || !completedCrop) return;
+
+    const canvas = document.createElement("canvas");
+    const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
+    const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
+    
+    canvas.width = completedCrop.width;
+    canvas.height = completedCrop.height;
+    
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(
+      imgRef.current,
+      completedCrop.x * scaleX,
+      completedCrop.y * scaleY,
+      completedCrop.width * scaleX,
+      completedCrop.height * scaleY,
+      0,
+      0,
+      completedCrop.width,
+      completedCrop.height
+    );
+
+    const base64 = canvas.toDataURL("image/jpeg", 0.9);
+    setImageBase64(base64);
+    setVideoBase64("");
+    setShowCropModal(false);
+    setCropSrc(null);
+  }, [completedCrop]);
 
   const loadComments = async (postId) => {
     try {
@@ -312,19 +385,65 @@ export const Feed = () => {
 
               <CardContent className="min-w-0 pt-6">
                 <form onSubmit={handleCreatePost} className="space-y-4">
-                  <Textarea
-                    placeholder="Mire gondolsz?"
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    className="min-h-[120px] w-full resize-none border-zinc-800 bg-zinc-950 text-white focus-visible:ring-orange-500/50"
-                  />
+                  <div className="relative">
+                    <Textarea
+                      placeholder="Mire gondolsz?"
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      className="min-h-[120px] w-full resize-none border-zinc-800 bg-zinc-950 text-white focus-visible:ring-orange-500/50 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="absolute right-3 top-3 text-zinc-500 hover:text-white transition"
+                    >
+                      <Smile className="h-5 w-5" />
+                    </button>
+                    
+                    {showEmojiPicker && (
+                      <div className="absolute right-0 top-12 z-50">
+                        <EmojiPicker
+                          onEmojiClick={onEmojiClick}
+                          theme="dark"
+                          width={300}
+                          height={400}
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   {imageBase64 && (
-                    <img
-                      src={imageBase64}
-                      className="w-full max-w-full max-h-[420px] rounded-xl border border-white/10 object-cover"
-                      alt="preview"
-                    />
+                    <div className="relative">
+                      <img
+                        src={imageBase64}
+                        className="w-full max-w-full max-h-[420px] rounded-xl border border-white/10 object-cover"
+                        alt="preview"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setImageBase64("")}
+                        className="absolute top-2 right-2 bg-red-500 rounded-full p-1 hover:bg-red-600"
+                      >
+                        <X className="h-4 w-4 text-white" />
+                      </button>
+                    </div>
+                  )}
+                  
+                  {videoBase64 && (
+                    <div className="relative">
+                      <video
+                        src={videoBase64}
+                        controls
+                        className="w-full max-h-[420px] rounded-xl border border-white/10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setVideoBase64("")}
+                        className="absolute top-2 right-2 bg-red-500 rounded-full p-1 hover:bg-red-600"
+                      >
+                        <X className="h-4 w-4 text-white" />
+                      </button>
+                    </div>
                   )}
 
                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -335,10 +454,22 @@ export const Feed = () => {
                         onChange={handleImageUpload}
                         className="hidden"
                       />
-
                       <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-zinc-800 px-4 py-2 transition hover:bg-zinc-700">
                         <ImageIcon className="h-4 w-4 shrink-0" />
                         Kép
+                      </div>
+                    </label>
+                    
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={handleVideoUpload}
+                        className="hidden"
+                      />
+                      <div className="flex items-center gap-2 rounded-lg border border-white/5 bg-zinc-800 px-4 py-2 transition hover:bg-zinc-700">
+                        <Video className="h-4 w-4 shrink-0" />
+                        Videó
                       </div>
                     </label>
 
@@ -371,21 +502,37 @@ export const Feed = () => {
                   <CardHeader className="pb-4">
                     <div className="flex min-w-0 justify-between gap-3">
                       <div className="flex min-w-0 gap-3">
-                        <Avatar className="shrink-0">
-                          <AvatarImage src={post.profile_pic} />
-                          <AvatarFallback>{post.username?.[0]}</AvatarFallback>
-                        </Avatar>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/profile/${post.user_id}`)}
+                          className="shrink-0"
+                        >
+                          <Avatar className="hover:ring-2 hover:ring-primary transition">
+                            <AvatarImage src={post.profile_pic} />
+                            <AvatarFallback>{post.username?.[0]}</AvatarFallback>
+                          </Avatar>
+                        </button>
 
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="max-w-[180px] truncate font-semibold text-white sm:max-w-none">
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/profile/${post.user_id}`)}
+                              className="max-w-[180px] truncate font-semibold text-white hover:text-primary transition sm:max-w-none text-left"
+                            >
                               {post.username}
-                            </p>
+                            </button>
 
                             {post.user_id === user?.user_id && (
                               <span className="flex items-center gap-1 text-xs text-orange-400">
                                 <BadgeCheck className="h-3 w-3 shrink-0" />
                                 Te
+                              </span>
+                            )}
+                            
+                            {post.status === "pending" && (
+                              <span className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded">
+                                Jóváhagyásra vár
                               </span>
                             )}
                           </div>
@@ -426,6 +573,14 @@ export const Feed = () => {
                           alt="post"
                         />
                       </button>
+                    )}
+                    
+                    {post.video_base64 && (
+                      <video
+                        src={post.video_base64}
+                        controls
+                        className="h-auto max-h-[420px] w-full max-w-full rounded-xl"
+                      />
                     )}
 
                     <div className="flex flex-wrap gap-6 border-t border-white/10 pt-4">
@@ -780,6 +935,63 @@ export const Feed = () => {
             type="button"
             aria-label="Bezárás"
           />
+        </div>
+      )}
+      
+      {/* Kép vágás modal */}
+      {showCropModal && cropSrc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="bg-zinc-900 rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Crop className="h-5 w-5" />
+                Kép vágása
+              </h3>
+              <button
+                onClick={() => {
+                  setShowCropModal(false);
+                  setCropSrc(null);
+                }}
+                className="text-zinc-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="mb-4">
+              <ReactCrop
+                crop={crop}
+                onChange={(c) => setCrop(c)}
+                onComplete={(c) => setCompletedCrop(c)}
+                aspect={undefined}
+              >
+                <img
+                  ref={imgRef}
+                  src={cropSrc}
+                  alt="Crop"
+                  className="max-h-[60vh] w-auto"
+                />
+              </ReactCrop>
+            </div>
+            
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Eredeti kép használata vágás nélkül
+                  setImageBase64(cropSrc);
+                  setVideoBase64("");
+                  setShowCropModal(false);
+                  setCropSrc(null);
+                }}
+              >
+                Eredeti használata
+              </Button>
+              <Button onClick={getCroppedImg} className="bg-primary hover:bg-orange-600">
+                Vágás alkalmazása
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

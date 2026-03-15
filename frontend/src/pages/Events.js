@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import {
   Calendar,
   MapPin,
-  DollarSign,
+  Banknote,
   Plus,
   Check,
   X,
@@ -32,7 +32,8 @@ import {
   Clock3,
   Filter,
   ChevronDown,
-  ExternalLink
+  ExternalLink,
+  Navigation
 } from "lucide-react";
 
 import { format } from "date-fns";
@@ -64,6 +65,7 @@ export const Events = () => {
     date: "",
     end_date: "",
     city: "",
+    address: "",
     entry_fee: 0,
     is_official: false,
     image_base64: ""
@@ -174,6 +176,36 @@ const getEffectiveEndDate = (event) => {
     return format(date, pattern, { locale: hu });
   };
 
+  const getGoogleMapsUrl = (city, address) => {
+    const query = address ? `${address}, ${city}` : city;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  };
+
+  const renderDescription = (text) => {
+    if (!text) return null;
+    
+    // URL regex
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    
+    return parts.map((part, index) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:text-orange-400 underline break-all"
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={index}>{part}</span>;
+    });
+  };
+
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -270,6 +302,7 @@ const getEffectiveEndDate = (event) => {
         date: "",
         end_date: "",
         city: "",
+        address: "",
         entry_fee: 0,
         is_official: false,
         image_base64: ""
@@ -539,9 +572,21 @@ const highlightedEvents = useMemo(() => {
                       onChange={(e) =>
                         setFormData((prev) => ({ ...prev, city: e.target.value }))
                       }
+                      placeholder="pl. Budapest"
                       required
                     />
                   </div>
+                </div>
+                
+                <div>
+                  <Label>Pontos cím (opcionális)</Label>
+                  <Input
+                    value={formData.address}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, address: e.target.value }))
+                    }
+                    placeholder="pl. Váci út 123."
+                  />
                 </div>
 
                 <div>
@@ -864,13 +909,19 @@ const highlightedEvents = useMemo(() => {
                         </div>
                       )}
 
-                      <div className="flex items-center gap-2">
+                      <a 
+                        href={getGoogleMapsUrl(event.city, event.address)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 hover:text-primary transition-colors"
+                      >
                         <MapPin size={16} />
-                        {event.city}
-                      </div>
+                        {event.address ? `${event.city}, ${event.address}` : event.city}
+                        <Navigation size={12} className="text-primary" />
+                      </a>
 
                       <div className="flex items-center gap-2">
-                        <DollarSign size={16} />
+                        <Banknote size={16} />
                         {event.entry_fee} Ft
                       </div>
 
@@ -894,9 +945,9 @@ const highlightedEvents = useMemo(() => {
 
                   <CardContent>
 
-                    <p className={`text-sm text-zinc-300 mb-4 min-h-[80px] whitespace-pre-wrap ${!expandedEvents[event.event_id] ? 'line-clamp-4' : ''}`}>
-                      {event.description}
-                    </p>
+                    <div className={`text-sm text-zinc-300 mb-4 min-h-[80px] whitespace-pre-wrap ${!expandedEvents[event.event_id] ? 'line-clamp-4' : ''}`}>
+                      {renderDescription(event.description)}
+                    </div>
                     
                     {event.description && event.description.length > 200 && (
                       <Button
@@ -1043,13 +1094,19 @@ const highlightedEvents = useMemo(() => {
                     </div>
                   )}
                   
-                  <div className="flex items-center gap-2">
+                  <a 
+                    href={getGoogleMapsUrl(selectedEvent.city, selectedEvent.address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 hover:text-primary transition-colors"
+                  >
                     <MapPin size={16} className="text-primary" />
-                    {selectedEvent.city}
-                  </div>
+                    {selectedEvent.address ? `${selectedEvent.city}, ${selectedEvent.address}` : selectedEvent.city}
+                    <Navigation size={12} />
+                  </a>
                   
                   <div className="flex items-center gap-2">
-                    <DollarSign size={16} className="text-primary" />
+                    <Banknote size={16} className="text-primary" />
                     {selectedEvent.entry_fee} Ft
                   </div>
                 </div>
@@ -1069,9 +1126,9 @@ const highlightedEvents = useMemo(() => {
                 
                 <div className="border-t border-zinc-800 pt-4">
                   <h3 className="text-lg font-semibold mb-3 text-white">Leírás</h3>
-                  <p className="text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                    {selectedEvent.description}
-                  </p>
+                  <div className="text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                    {renderDescription(selectedEvent.description)}
+                  </div>
                 </div>
                 
                 <div className="border-t border-zinc-800 pt-4">

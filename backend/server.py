@@ -79,13 +79,16 @@ class Post(BaseModel):
     profile_pic: Optional[str] = ""
     content: str
     image_base64: Optional[str] = ""
+    video_base64: Optional[str] = ""
     reaction_count: int = 0
     comment_count: int = 0
+    status: str = "pending"  # pending, approved, rejected
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PostCreate(BaseModel):
     content: str
     image_base64: Optional[str] = ""
+    video_base64: Optional[str] = ""
 
 class Reaction(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -124,6 +127,7 @@ class Event(BaseModel):
     date: datetime
     end_date: Optional[datetime] = None
     city: str
+    address: Optional[str] = ""
     entry_fee: float
     is_official: bool = False
     image_base64: Optional[str] = ""
@@ -140,6 +144,7 @@ class EventCreate(BaseModel):
     date: datetime
     end_date: Optional[datetime] = None
     city: str
+    address: Optional[str] = ""
     entry_fee: float
     is_official: bool = False
     image_base64: Optional[str] = ""
@@ -744,9 +749,11 @@ async def create_post(post_data: PostCreate, current_user: User = Depends(get_cu
         "username": current_user.username,
         "profile_pic": current_user.profile_pic,
         "content": post_data.content,
-        "image_base64": post_data.image_base64,
+        "image_base64": post_data.image_base64 or "",
+        "video_base64": post_data.video_base64 or "",
         "reaction_count": 0,
         "comment_count": 0,
+        "status": "pending",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
@@ -757,11 +764,46 @@ async def create_post(post_data: PostCreate, current_user: User = Depends(get_cu
 
 @fastapi_app.get("/api/posts/feed", response_model=List[Post])
 async def get_feed(current_user: User = Depends(get_current_user)):
-    posts = await db.posts.find({}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    # Sima user: csak jóváhagyott posztok, Admin: minden poszt
+    query = {} if current_user.role == 1 else {"$or": [{"status": "approved"}, {"status": {"$exists": False}}, {"user_id": current_user.user_id}]}
+    posts = await db.posts.find(query, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
     for post in posts:
         if isinstance(post["created_at"], str):
             post["created_at"] = datetime.fromisoformat(post["created_at"])
     return [Post(**post) for post in posts]
+
+@fastapi_app.get("/api/posts/pending", response_model=List[Post])
+async def get_pending_posts(current_user: User = Depends(get_current_user)):
+    """Admin: jóváhagyásra váró posztok"""
+    if current_user.role != 1:
+        raise HTTPException(status_code=403, detail="Csak admin")
+    
+    posts = await db.posts.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    for post in posts:
+        if isinstance(post["created_at"], str):
+            post["created_at"] = datetime.fromisoformat(post["created_at"])
+    return [Post(**post) for post in posts]
+
+@fastapi_app.post("/api/posts/{post_id}/approve")
+async def approve_post(post_id: str, current_user: User = Depends(get_current_user)):
+    """Admin: poszt jóváhagyása"""
+    if current_user.role != 1:
+        raise HTTPException(status_code=403, detail="Csak admin")
+    
+    result = await db.posts.update_one({"post_id": post_id}, {"$set": {"status": "approved"}})
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Poszt nem található")
+    
+    return {"message": "Poszt jóváhagyva"}
+
+@fastapi_app.post("/api/posts/{post_id}/reject")
+async def reject_post(post_id: str, current_user: User = Depends(get_current_user)):
+    """Admin: poszt elutasítása"""
+    if current_user.role != 1:
+        raise HTTPException(status_code=403, detail="Csak admin")
+    
+    await db.posts.delete_one({"post_id": post_id})
+    return {"message": "Poszt elutasítva és törölve"}
 
 @fastapi_app.get("/api/posts/user/{user_id}", response_model=List[Post])
 async def get_user_posts(user_id: str, current_user: User = Depends(get_current_user)):

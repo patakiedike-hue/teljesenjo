@@ -14,6 +14,8 @@ import { Wallet } from './pages/Wallet';
 import { AdminPanel } from './pages/AdminPanel';
 import { Messages } from './pages/Messages';
 import { Settings } from './pages/Settings';
+import { TermsOfService } from './pages/TermsOfService';
+import { PrivacyPolicy } from './pages/PrivacyPolicy';
 import Footer from "./components/Footer";
 
 import './App.css';
@@ -81,6 +83,10 @@ function App() {
         <Route path="/messages" element={<PrivateRoute><Messages /></PrivateRoute>} />
 
         <Route path="/admin" element={<PrivateRoute><AdminPanel /></PrivateRoute>} />
+        
+        {/* Jogi oldalak - publikus */}
+        <Route path="/aszf" element={<TermsOfService />} />
+        <Route path="/adatvedelem" element={<PrivacyPolicy />} />
       </Routes>
 
     </div>
